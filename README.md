@@ -41,6 +41,49 @@ apt install clang              # ships libclang.so
 
 If libclang is not found, the server falls back to tree-sitter-only extraction — all tools still work, call edges are less precise.
 
+## CLI Usage
+
+The binary works as a standalone command-line tool as well as an MCP server.
+
+```bash
+# Index a repository (blocks until complete)
+arborist-mcp index /path/to/myrepo
+arborist-mcp index /path/to/myrepo --compile-commands /path/to/compile_commands.json
+
+# Check status / list projects
+arborist-mcp status myrepo
+arborist-mcp list
+
+# Search for symbols
+arborist-mcp search myrepo "IOBuf" --label Class --limit 10
+
+# Trace call graph
+arborist-mcp trace myrepo "folly::IOBuf::copyBuffer" --direction outbound --depth 3
+
+# Find semantically similar symbols
+arborist-mcp similar myrepo "folly::Future" --top 10
+
+# Get source snippet
+arborist-mcp snippet myrepo "folly::IOBuf::copyBuffer"
+
+# Detect changes (git diff HEAD → affected symbols)
+arborist-mcp changes myrepo
+
+# Graph query
+arborist-mcp query myrepo 'MATCH (n:Function {name: "parse"}) RETURN n LIMIT 20'
+
+# Export interactive HTML visualization
+arborist-mcp export myrepo /tmp/graph.html --root "folly::IOBuf" --depth 3
+arborist-mcp export myrepo /tmp/overview.html --label Class --max-nodes 150
+
+# Delete a project
+arborist-mcp delete myrepo
+```
+
+All commands output JSON to stdout. The `index` subcommand runs synchronously and exits when indexing is complete, unlike the MCP `index_repository` tool which returns immediately and requires polling.
+
+Run without arguments (or with `serve`) to start the MCP server over stdio.
+
 ## MCP Configuration
 
 Add to your MCP client config (e.g. Claude Desktop `claude_desktop_config.json`):
