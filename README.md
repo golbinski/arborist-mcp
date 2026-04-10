@@ -237,6 +237,55 @@ Feature vector: 90 dimensions — 64 FNV-1a name hash + 10 label one-hot + 16 lo
 
 Cleora propagation: 4 iterations, α=0.5 self-loop weight, undirected adjacency, edge-type-weighted mean pooling, L2-normalization after each iteration.
 
+## Benchmark: facebook/folly
+
+Indexed on an Apple M-series Mac (debug build, no libclang).
+[folly](https://github.com/facebook/folly) is Meta's C++ foundational library — ~670k lines across 2418 files.
+
+### Indexing time
+
+| Pass | Time |
+|------|------|
+| File discovery (ignore-aware walk) | 0.3s |
+| Tree-sitter parse — 2418 files (rayon parallel) | 15.5s |
+| Symbol ingestion + edge writing | 41.1s |
+| Call-site resolution (in-memory index) | 29.1s |
+| Cleora embedding computation | 18.1s |
+| **Total** | **104s** |
+
+### Graph output
+
+| Metric | Count |
+|--------|-------|
+| Nodes | 24,324 |
+| Edges | 88,973 |
+| Nodes with embeddings | 24,324 |
+| Database size | 24.5 MB |
+
+**Node breakdown:**
+
+| Label | Count |
+|-------|-------|
+| Method | 13,781 |
+| Struct | 3,182 |
+| File | 2,418 |
+| Class | 2,197 |
+| Function | 1,681 |
+| Variable | 517 |
+| Enum | 280 |
+| Namespace | 267 |
+
+**Edge breakdown:**
+
+| Type | Count |
+|------|-------|
+| CALLS | 34,138 |
+| DEFINES | 27,016 |
+| CONTAINS | 19,045 |
+| INCLUDES | 8,774 |
+
+Note: INHERITS, INSTANTIATES, OVERRIDES, USES_TYPE edges require libclang (compile_commands.json). With libclang active, call edge quality also improves significantly.
+
 ## Development
 
 ```bash
