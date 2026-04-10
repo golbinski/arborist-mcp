@@ -4,9 +4,8 @@ pub mod treesitter;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use walkdir::WalkDir;
 
-use crate::graph::{GraphBuffer};
+use crate::graph::GraphBuffer;
 use crate::graph::schema::{EdgeType, NodeLabel};
 use treesitter::TreeSitterExtractor;
 
@@ -24,22 +23,27 @@ pub fn is_cpp_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Collect all C++ files under `repo_path`, skipping common build dirs.
+/// Collect all C++ files under `repo_path`.
+///
+/// Respects `.gitignore`, `.git/info/exclude`, and the user's global gitignore,
+/// plus `.hgignore` files (treated with gitignore syntax — covers glob patterns,
+/// which are the most common case). VCS metadata directories (`.git`, `.hg`, `.svn`)
+/// are always excluded regardless of ignore files.
 pub fn collect_cpp_files(repo_path: &Path) -> Vec<PathBuf> {
-    WalkDir::new(repo_path)
-        .follow_links(false)
-        .into_iter()
+    ignore::WalkBuilder::new(repo_path)
+        .hidden(false)             // don't skip dotfiles by default
+        .git_ignore(true)          // respect .gitignore
+        .git_global(true)          // respect global gitignore (~/.config/git/ignore)
+        .git_exclude(true)         // respect .git/info/exclude
+        .add_custom_ignore_filename(".hgignore")  // Mercurial (glob-syntax subset)
         .filter_entry(|e| {
+            // Always skip VCS metadata dirs
             let name = e.file_name().to_string_lossy();
-            !matches!(
-                name.as_ref(),
-                ".git" | "build" | "cmake-build-debug" | "cmake-build-release"
-                | "_build" | "out" | "dist" | "target" | "vendor"
-                | "third_party" | "3rdparty" | "extern" | "external"
-            )
+            !matches!(name.as_ref(), ".git" | ".hg" | ".svn" | ".pijul")
         })
+        .build()
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
+        .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
         .map(|e| e.into_path())
         .filter(|p| is_cpp_file(p))
         .collect()
@@ -203,4 +207,69 @@ pub fn ingest_includes(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_cpp_file_accepts_known_extensions() {
+        for ext in &["cpp", "cc", "cxx", "hpp", "hxx", "h", "c", "cu", "cuh"] {
+            let p = PathBuf::from(format!("foo.{}", ext));
+            assert!(is_cpp_file(&p), ".{} should be accepted", ext);
+        }
+    }
+
+    #[test]
+    fn is_cpp_file_rejects_other_extensions() {
+        for name in &["foo.rs", "foo.py", "foo.txt", "Makefile", "foo"] {
+            let p = PathBuf::from(name);
+            assert!(!is_cpp_file(&p), "{} should be rejected", name);
+        }
+    }
+
+    #[test]
+    fn collect_cpp_files_respects_ignore_file() {
+        use std::fs;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        fs::write(root.join("main.cpp"), "int main() {}").unwrap();
+
+        // build/ should be excluded via .ignore (respected by the `ignore` crate
+        // without requiring a VCS repository, unlike .gitignore).
+        fs::create_dir_all(root.join("build")).unwrap();
+        fs::write(root.join("build/gen.cpp"), "// generated").unwrap();
+        fs::write(root.join(".ignore"), "build/\n").unwrap();
+
+        let files = collect_cpp_files(root);
+        let names: Vec<_> = files.iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+
+        assert!(names.contains(&"main.cpp".to_owned()), "main.cpp should be found");
+        assert!(!names.contains(&"gen.cpp".to_owned()), "gen.cpp in build/ should be ignored");
+    }
+
+    #[test]
+    fn collect_cpp_files_finds_nested() {
+        use std::fs;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        fs::create_dir_all(root.join("src/net")).unwrap();
+        fs::write(root.join("src/net/socket.cpp"), "").unwrap();
+        fs::write(root.join("src/net/socket.h"), "").unwrap();
+        fs::write(root.join("src/net/README.md"), "").unwrap();
+
+        let files = collect_cpp_files(root);
+        let names: Vec<_> = files.iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+
+        assert!(names.contains(&"socket.cpp".to_owned()));
+        assert!(names.contains(&"socket.h".to_owned()));
+        assert!(!names.contains(&"README.md".to_owned()));
+    }
 }

@@ -108,3 +108,63 @@ pub fn l2_normalize(v: &mut Array1<f32>) {
         *v /= norm;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::graph::schema::{Node, NodeLabel};
+
+    fn dummy_node(id: i64, label: NodeLabel, qname: &str) -> Node {
+        Node {
+            id,
+            project: "test".into(),
+            label,
+            qualified_name: qname.into(),
+            file_path: None,
+            line_start: None,
+            line_end: None,
+            properties: serde_json::Value::Null,
+        }
+    }
+
+    #[test]
+    fn feature_dim_matches_constants() {
+        assert_eq!(FEATURE_DIM, HASH_DIMS + LABEL_DIMS + DEGREE_DIMS);
+        assert_eq!(LABEL_DIMS, NodeLabel::COUNT);
+        assert_eq!(DEGREE_DIMS, EdgeType::ALL.len() * 2);
+    }
+
+    #[test]
+    fn build_feature_vector_correct_length() {
+        let node = dummy_node(1, NodeLabel::Function, "ns::foo");
+        let degree_table = DegreeTable::new();
+        let fv = build_feature_vector(&node, &degree_table);
+        assert_eq!(fv.len(), FEATURE_DIM);
+    }
+
+    #[test]
+    fn build_feature_vector_is_unit_length() {
+        let node = dummy_node(1, NodeLabel::Method, "ns::MyClass::bar");
+        let degree_table = DegreeTable::new();
+        let fv = build_feature_vector(&node, &degree_table);
+        let norm: f32 = fv.dot(&fv).sqrt();
+        assert!((norm - 1.0).abs() < 1e-5, "norm={}", norm);
+    }
+
+    #[test]
+    fn l2_normalize_unit_vector() {
+        let mut v = Array1::from_vec(vec![3.0_f32, 4.0]);
+        l2_normalize(&mut v);
+        let norm: f32 = v.dot(&v).sqrt();
+        assert!((norm - 1.0).abs() < 1e-6);
+        assert!((v[0] - 0.6).abs() < 1e-6);
+        assert!((v[1] - 0.8).abs() < 1e-6);
+    }
+
+    #[test]
+    fn l2_normalize_zero_vector_unchanged() {
+        let mut v = Array1::from_vec(vec![0.0_f32, 0.0, 0.0]);
+        l2_normalize(&mut v);
+        assert!(v.iter().all(|&x| x == 0.0));
+    }
+}

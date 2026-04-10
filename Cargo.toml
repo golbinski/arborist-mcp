@@ -11,7 +11,7 @@ path = "src/main.rs"
 tree-sitter = "0.23"
 tree-sitter-cpp = "0.23"
 clang-sys = { version = "1", features = ["runtime", "clang_14_0"] }
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.31", features = ["bundled", "backup"] }
 ndarray = "0.16"
 rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", package = "rmcp", features = ["server", "transport-io"] }
 serde = { version = "1", features = ["derive"] }
@@ -19,9 +19,12 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 rayon = "1"
 regex = "1"
-walkdir = "2"
+ignore = "0.4"
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dirs = "5"
 fnv = "1"
+
+[dev-dependencies]
+tempfile = "3"

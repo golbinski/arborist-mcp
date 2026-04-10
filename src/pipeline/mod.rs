@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::embeddings;
 use crate::graph::store::GraphStore;
-use crate::graph::{open_store, GraphBuffer};
+use crate::graph::GraphBuffer;
 use crate::graph::schema::{EdgeType, NodeLabel};
 use crate::parser::{collect_cpp_files, ingest_call_sites, ingest_file_result, ingest_includes, parse_file};
 use crate::parser::libclang::LibclangResolver;
@@ -18,9 +18,13 @@ pub struct IndexingConfig {
     pub db_path: PathBuf,
 }
 
-/// Run the full indexing pipeline.  Updates project status in the store.
+/// Run the full indexing pipeline.
+///
+/// All writes go into an in-memory SQLite database for maximum throughput
+/// (no fsync per transaction).  When indexing is complete the database is
+/// persisted to `config.db_path` in a single bulk backup operation.
 pub fn run(config: IndexingConfig) -> Result<()> {
-    let store = open_store(&config.db_path)?;
+    let store = Arc::new(Mutex::new(GraphStore::open_memory()?));
 
     {
         let locked = store.lock().unwrap();
@@ -36,6 +40,10 @@ pub fn run(config: IndexingConfig) -> Result<()> {
             Err(e) => locked.set_project_error(&config.project_name, &e.to_string())?,
         }
     }
+
+    // Persist to disk regardless of success or failure so index_status reflects the error.
+    tracing::info!("persisting graph to {}", config.db_path.display());
+    store.lock().unwrap().backup_to_file(&config.db_path)?;
 
     result
 }

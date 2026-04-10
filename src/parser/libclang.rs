@@ -59,25 +59,70 @@ impl LibclangResolver {
 
 // ── Runtime probe ──────────────────────────────────────────────────────────────
 
+/// Find libclang by asking the `clang` command in PATH about its library directories.
+///
+/// Strategy:
+///  1. Run `clang -print-search-dirs` and parse the `libraries:` line.
+///     The resource dir (e.g. `/usr/lib/clang/17`) lives inside the lib dir;
+///     its parent is where `libclang.dylib` / `libclang.so` lives.
+///  2. Try `llvm-config --libdir` as a fallback (common on Linux).
+///
+/// When a candidate is found, sets `LIBCLANG_PATH` so clang-sys's `load()`
+/// call later in `libclang_traverse` can locate the shared library.
 fn probe_libclang() -> bool {
-    // Check well-known libclang locations for the current platform.
-    let candidates: &[&str] = if cfg!(target_os = "macos") {
-        &[
-            "/usr/lib/libclang.dylib",
-            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/libclang.dylib",
-            "/Library/Developer/CommandLineTools/usr/lib/libclang.dylib",
-        ]
+    let lib_names: &[&str] = if cfg!(target_os = "macos") {
+        &["libclang.dylib"]
     } else {
         &[
-            "/usr/lib/llvm-14/lib/libclang.so.1",
-            "/usr/lib/llvm-14/lib/libclang.so",
-            "/usr/lib/llvm-15/lib/libclang.so.1",
-            "/usr/lib/llvm-16/lib/libclang.so.1",
-            "/usr/lib/x86_64-linux-gnu/libclang-14.so",
-            "/usr/lib/libclang.so",
+            "libclang.so", "libclang.so.1",
+            "libclang-14.so.1", "libclang-15.so.1", "libclang-16.so.1",
+            "libclang-17.so.1", "libclang-18.so.1",
         ]
     };
-    candidates.iter().any(|p| Path::new(p).exists())
+
+    // Collect candidate library directories from clang and llvm-config.
+    let mut lib_dirs: Vec<PathBuf> = Vec::new();
+
+    if let Ok(out) = std::process::Command::new("clang")
+        .args(["-print-search-dirs"])
+        .output()
+    {
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            // Line looks like: "libraries: =/path/a:/path/b"
+            if let Some(rest) = line.strip_prefix("libraries: =") {
+                for segment in rest.split(':') {
+                    let dir = PathBuf::from(segment.trim());
+                    // The segment is the clang resource dir (e.g. /usr/lib/clang/17).
+                    // libclang itself lives in its parent.
+                    if let Some(parent) = dir.parent() {
+                        lib_dirs.push(parent.to_owned());
+                    }
+                    lib_dirs.push(dir);
+                }
+            }
+        }
+    }
+
+    if let Ok(out) = std::process::Command::new("llvm-config").arg("--libdir").output() {
+        let dir = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+        if !dir.is_empty() {
+            lib_dirs.push(PathBuf::from(dir));
+        }
+    }
+
+    for dir in &lib_dirs {
+        for name in lib_names {
+            let candidate = dir.join(name);
+            if candidate.exists() {
+                tracing::debug!("found libclang at {}", candidate.display());
+                // Tell clang-sys where to find it when load() is called later.
+                unsafe { std::env::set_var("LIBCLANG_PATH", dir) };
+                return true;
+            }
+        }
+    }
+
+    false
 }
 
 // ── Libclang AST traversal ─────────────────────────────────────────────────────

@@ -180,3 +180,51 @@ pub struct EdgeInput {
     pub edge_type: EdgeType,
     pub properties: serde_json::Value,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn node_label_roundtrip() {
+        for label in [
+            NodeLabel::Project, NodeLabel::File, NodeLabel::Namespace,
+            NodeLabel::Class, NodeLabel::Struct, NodeLabel::Function,
+            NodeLabel::Method, NodeLabel::Template, NodeLabel::Enum,
+            NodeLabel::Variable,
+        ] {
+            assert_eq!(NodeLabel::from_str(label.as_str()), Some(label));
+        }
+        assert_eq!(NodeLabel::from_str("Unknown"), None);
+    }
+
+    #[test]
+    fn node_label_one_hot_indices_unique() {
+        let mut seen = std::collections::HashSet::new();
+        for label in [
+            NodeLabel::Project, NodeLabel::File, NodeLabel::Namespace,
+            NodeLabel::Class, NodeLabel::Struct, NodeLabel::Function,
+            NodeLabel::Method, NodeLabel::Template, NodeLabel::Enum,
+            NodeLabel::Variable,
+        ] {
+            let idx = label.one_hot_index();
+            assert!(idx < NodeLabel::COUNT, "index {} out of range", idx);
+            assert!(seen.insert(idx), "duplicate one_hot_index {}", idx);
+        }
+    }
+
+    #[test]
+    fn edge_type_roundtrip() {
+        for et in EdgeType::ALL {
+            assert_eq!(EdgeType::from_str(et.as_str()), Some(*et));
+        }
+        assert_eq!(EdgeType::from_str("UNKNOWN"), None);
+    }
+
+    #[test]
+    fn edge_type_weights_positive() {
+        for et in EdgeType::ALL {
+            assert!(et.weight() > 0.0, "{} has non-positive weight", et.as_str());
+        }
+    }
+}

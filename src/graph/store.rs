@@ -9,6 +9,8 @@ pub struct GraphStore {
 }
 
 impl GraphStore {
+    /// Open (or create) a file-backed database.  Used for read-only tool queries
+    /// after indexing is complete.
     pub fn open(db_path: &Path) -> Result<Self> {
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)
@@ -19,6 +21,35 @@ impl GraphStore {
         let store = Self { conn };
         store.migrate()?;
         Ok(store)
+    }
+
+    /// Open a pure in-memory database.  Used during indexing for maximum write
+    /// throughput — all B-tree updates stay in RAM and are never fsynced.
+    /// Call `backup_to_file` when indexing is complete.
+    pub fn open_memory() -> Result<Self> {
+        let conn = Connection::open_in_memory()
+            .context("opening in-memory SQLite db")?;
+        let store = Self { conn };
+        store.migrate()?;
+        Ok(store)
+    }
+
+    /// Persist the in-memory database to `db_path` using SQLite's online backup API.
+    /// Creates (or overwrites) the destination file atomically.
+    pub fn backup_to_file(&self, db_path: &Path) -> Result<()> {
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating db directory {}", parent.display()))?;
+        }
+        let mut dst = Connection::open(db_path)
+            .with_context(|| format!("opening backup destination {}", db_path.display()))?;
+        let backup = rusqlite::backup::Backup::new(&self.conn, &mut dst)
+            .context("initialising SQLite backup")?;
+        // Copy all pages in a single step — fine for datasets that fit in RAM.
+        backup
+            .run_to_completion(0, std::time::Duration::ZERO, None)
+            .context("running SQLite backup")?;
+        Ok(())
     }
 
     fn migrate(&self) -> Result<()> {
