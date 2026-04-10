@@ -67,6 +67,7 @@ impl ServerHandler for ArboristServer {
             "detect_changes" => tools::detect_changes(ctx, &params),
             "query" => tools::query_graph(ctx, &params),
             "delete_project" => tools::delete_project(ctx, &params),
+            "export_graph" => tools::export_graph(ctx, &params),
             other => Err(anyhow::anyhow!("unknown tool: {}", other)),
         };
 
@@ -205,6 +206,29 @@ fn all_tool_definitions() -> Vec<Tool> {
                     "project": { "type": "string" }
                 },
                 "required": ["project"]
+            }),
+        ),
+        make_tool(
+            "export_graph",
+            "Generate a standalone interactive HTML visualization of the C++ knowledge graph. \
+             Writes a self-contained HTML file to output_path. \
+             Use root_node for a BFS-centered call/inheritance view, or omit it for an overview \
+             of the most connected symbols. Open the file in any browser (requires internet for CDN scripts).",
+            json!({
+                "type": "object",
+                "properties": {
+                    "project": { "type": "string", "description": "Project name (must be indexed)" },
+                    "output_path": { "type": "string", "description": "Absolute path to write the .html file, e.g. /tmp/graph.html" },
+                    "root_node": { "type": "string", "description": "Qualified name of the node to BFS from. If omitted, uses the top max_nodes/2 highest-degree nodes as seeds." },
+                    "label": {
+                        "type": "string",
+                        "enum": ["Project","File","Namespace","Class","Struct","Function","Method","Template","Enum","Variable"],
+                        "description": "Restrict subgraph to nodes of this label only"
+                    },
+                    "depth": { "type": "integer", "default": 3, "minimum": 1, "maximum": 8, "description": "BFS hop depth from root_node" },
+                    "max_nodes": { "type": "integer", "default": 200, "minimum": 10, "maximum": 500, "description": "Maximum nodes to include" }
+                },
+                "required": ["project", "output_path"]
             }),
         ),
     ]

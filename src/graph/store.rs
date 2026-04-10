@@ -455,6 +455,111 @@ impl GraphStore {
         Ok(results)
     }
 
+    /// Return up to `limit` nodes ordered by outbound edge count (descending).
+    /// Used as high-connectivity seeds for the `export_graph` overview mode.
+    pub fn get_high_degree_nodes(
+        &self,
+        project: &str,
+        label: Option<NodeLabel>,
+        limit: usize,
+    ) -> Result<Vec<Node>> {
+        let label_filter = label
+            .map(|l| format!("AND n.label='{}'", l.as_str()))
+            .unwrap_or_default();
+        let sql = format!(
+            "SELECT n.id, n.project, n.label, n.qualified_name,
+                    n.file_path, n.line_start, n.line_end, n.properties
+               FROM nodes n
+               LEFT JOIN edges e ON e.source_id = n.id
+              WHERE n.project=?1 {}
+              GROUP BY n.id
+              ORDER BY COUNT(e.target_id) DESC
+              LIMIT ?2",
+            label_filter
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![project, limit as i64], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, Option<String>>(4)?,
+                r.get::<_, Option<i32>>(5)?,
+                r.get::<_, Option<i32>>(6)?,
+                r.get::<_, String>(7)?,
+            ))
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            let (id, project, label_s, qname, file_path, ls, le, props_s) = row?;
+            if let Some(label) = NodeLabel::from_str(&label_s) {
+                let properties =
+                    serde_json::from_str(&props_s).unwrap_or(serde_json::Value::Null);
+                results.push(Node {
+                    id,
+                    project,
+                    label,
+                    qualified_name: qname,
+                    file_path,
+                    line_start: ls,
+                    line_end: le,
+                    properties,
+                });
+            }
+        }
+        Ok(results)
+    }
+
+    /// Return all edges where both endpoints are in `node_ids`.
+    /// Used to reconstruct the induced subgraph after seed selection.
+    pub fn get_edges_between(&self, node_ids: &[i64]) -> Result<Vec<Edge>> {
+        if node_ids.is_empty() {
+            return Ok(vec![]);
+        }
+        // Build two separate IN clauses with distinct parameter indices so SQLite
+        // sees 2*N unique slots (named params ?1..?N are de-duplicated by SQLite).
+        let n = node_ids.len();
+        let src_placeholders: String = (1..=n).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
+        let tgt_placeholders: String = (n + 1..=2 * n).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT source_id, target_id, type, properties
+               FROM edges
+              WHERE source_id IN ({src}) AND target_id IN ({tgt})",
+            src = src_placeholders,
+            tgt = tgt_placeholders,
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let double_ids: Vec<&dyn rusqlite::ToSql> = node_ids
+            .iter()
+            .chain(node_ids.iter())
+            .map(|id| id as &dyn rusqlite::ToSql)
+            .collect();
+        let rows = stmt.query_map(double_ids.as_slice(), |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            let (src, tgt, et_s, props_s) = row?;
+            if let Some(et) = EdgeType::from_str(&et_s) {
+                let props =
+                    serde_json::from_str(&props_s).unwrap_or(serde_json::Value::Null);
+                results.push(Edge {
+                    source_id: src,
+                    target_id: tgt,
+                    edge_type: et,
+                    properties: props,
+                });
+            }
+        }
+        Ok(results)
+    }
+
     // ── Embeddings ────────────────────────────────────────────────────────────
 
     pub fn upsert_embedding(&self, node_id: i64, vector: &[f32]) -> Result<()> {
