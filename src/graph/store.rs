@@ -27,8 +27,7 @@ impl GraphStore {
     /// throughput — all B-tree updates stay in RAM and are never fsynced.
     /// Call `backup_to_file` when indexing is complete.
     pub fn open_memory() -> Result<Self> {
-        let conn = Connection::open_in_memory()
-            .context("opening in-memory SQLite db")?;
+        let conn = Connection::open_in_memory().context("opening in-memory SQLite db")?;
         let store = Self { conn };
         store.migrate()?;
         Ok(store)
@@ -222,9 +221,9 @@ impl GraphStore {
     }
 
     pub fn get_node_id(&self, project: &str, qualified_name: &str) -> Result<Option<i64>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id FROM nodes WHERE project=?1 AND qualified_name=?2",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id FROM nodes WHERE project=?1 AND qualified_name=?2")?;
         let mut rows = stmt.query_map(params![project, qualified_name], |r| r.get(0))?;
         Ok(rows.next().transpose()?)
     }
@@ -273,10 +272,12 @@ impl GraphStore {
         label: Option<NodeLabel>,
         limit: usize,
     ) -> Result<Vec<Node>> {
-        let re = regex::Regex::new(pattern)
-            .with_context(|| format!("invalid regex: {}", pattern))?;
+        let re =
+            regex::Regex::new(pattern).with_context(|| format!("invalid regex: {}", pattern))?;
 
-        let label_filter = label.map(|l| format!("AND label='{}'", l.as_str())).unwrap_or_default();
+        let label_filter = label
+            .map(|l| format!("AND label='{}'", l.as_str()))
+            .unwrap_or_default();
         // No LIMIT in SQL — fetch all matching label rows and filter by regex in Rust.
         // This is correct for any pattern; for large tables (100K+ nodes) consider an FTS index.
         let sql = format!(
@@ -494,8 +495,7 @@ impl GraphStore {
         for row in rows {
             let (id, project, label_s, qname, file_path, ls, le, props_s) = row?;
             if let Some(label) = NodeLabel::from_str(&label_s) {
-                let properties =
-                    serde_json::from_str(&props_s).unwrap_or(serde_json::Value::Null);
+                let properties = serde_json::from_str(&props_s).unwrap_or(serde_json::Value::Null);
                 results.push(Node {
                     id,
                     project,
@@ -520,8 +520,14 @@ impl GraphStore {
         // Build two separate IN clauses with distinct parameter indices so SQLite
         // sees 2*N unique slots (named params ?1..?N are de-duplicated by SQLite).
         let n = node_ids.len();
-        let src_placeholders: String = (1..=n).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
-        let tgt_placeholders: String = (n + 1..=2 * n).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
+        let src_placeholders: String = (1..=n)
+            .map(|i| format!("?{}", i))
+            .collect::<Vec<_>>()
+            .join(",");
+        let tgt_placeholders: String = (n + 1..=2 * n)
+            .map(|i| format!("?{}", i))
+            .collect::<Vec<_>>()
+            .join(",");
         let sql = format!(
             "SELECT source_id, target_id, type, properties
                FROM edges
@@ -547,8 +553,7 @@ impl GraphStore {
         for row in rows {
             let (src, tgt, et_s, props_s) = row?;
             if let Some(et) = EdgeType::from_str(&et_s) {
-                let props =
-                    serde_json::from_str(&props_s).unwrap_or(serde_json::Value::Null);
+                let props = serde_json::from_str(&props_s).unwrap_or(serde_json::Value::Null);
                 results.push(Edge {
                     source_id: src,
                     target_id: tgt,
@@ -563,10 +568,7 @@ impl GraphStore {
     // ── Embeddings ────────────────────────────────────────────────────────────
 
     pub fn upsert_embedding(&self, node_id: i64, vector: &[f32]) -> Result<()> {
-        let blob: Vec<u8> = vector
-            .iter()
-            .flat_map(|f| f.to_le_bytes())
-            .collect();
+        let blob: Vec<u8> = vector.iter().flat_map(|f| f.to_le_bytes()).collect();
         self.conn.execute(
             "INSERT INTO embeddings(node_id, vector) VALUES(?1, ?2)
              ON CONFLICT(node_id) DO UPDATE SET vector=excluded.vector",

@@ -23,16 +23,17 @@ impl ToolContext {
         let path = self.db_path(project);
         crate::graph::open_store(&path)
     }
-
-    fn open_shared(&self) -> Result<Arc<Mutex<GraphStore>>> {
-        let path = self.db_dir.join("arborist.db");
-        crate::graph::open_store(&path)
-    }
 }
 
 fn sanitize_name(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -44,9 +45,7 @@ pub fn index_repository(ctx: &ToolContext, params: &Value) -> Result<Value> {
         .context("missing repo_path")?
         .to_owned();
 
-    let compile_commands_path = params["compile_commands_path"]
-        .as_str()
-        .map(PathBuf::from);
+    let compile_commands_path = params["compile_commands_path"].as_str().map(PathBuf::from);
 
     // Derive project name from last directory component
     let project_name = Path::new(&repo_path)
@@ -112,24 +111,27 @@ pub fn search_graph(ctx: &ToolContext, params: &Value) -> Result<Value> {
     let pattern = params["name_pattern"]
         .as_str()
         .context("missing name_pattern")?;
-    let label = params["label"]
-        .as_str()
-        .and_then(NodeLabel::from_str);
+    let label = params["label"].as_str().and_then(NodeLabel::from_str);
     let limit = params["limit"].as_u64().unwrap_or(20) as usize;
 
     let store = ctx.open(project)?;
-    let nodes = store.lock().unwrap().search_nodes(project, pattern, label, limit)?;
+    let nodes = store
+        .lock()
+        .unwrap()
+        .search_nodes(project, pattern, label, limit)?;
 
     let results: Vec<Value> = nodes
         .into_iter()
-        .map(|n| json!({
-            "id": n.id,
-            "label": n.label.as_str(),
-            "qualified_name": n.qualified_name,
-            "file_path": n.file_path,
-            "line_start": n.line_start,
-            "line_end": n.line_end,
-        }))
+        .map(|n| {
+            json!({
+                "id": n.id,
+                "label": n.label.as_str(),
+                "qualified_name": n.qualified_name,
+                "file_path": n.file_path,
+                "line_start": n.line_start,
+                "line_end": n.line_end,
+            })
+        })
         .collect();
 
     let count = results.len();
@@ -250,10 +252,12 @@ pub fn get_snippet(ctx: &ToolContext, params: &Value) -> Result<Value> {
         .context("missing qualified_name")?;
 
     let store = ctx.open(project)?;
-    let nodes = store
-        .lock()
-        .unwrap()
-        .search_nodes(project, &format!("^{}$", regex::escape(qualified_name)), None, 1)?;
+    let nodes = store.lock().unwrap().search_nodes(
+        project,
+        &format!("^{}$", regex::escape(qualified_name)),
+        None,
+        1,
+    )?;
 
     if nodes.is_empty() {
         return Ok(json!({ "error": format!("symbol '{}' not found", qualified_name) }));
@@ -265,8 +269,8 @@ pub fn get_snippet(ctx: &ToolContext, params: &Value) -> Result<Value> {
         None => return Ok(json!({ "error": "symbol has no file path" })),
     };
 
-    let source = std::fs::read_to_string(&file_path)
-        .with_context(|| format!("reading {}", file_path))?;
+    let source =
+        std::fs::read_to_string(&file_path).with_context(|| format!("reading {}", file_path))?;
 
     let start = node.line_start.unwrap_or(1) as usize;
     let end = node.line_end.unwrap_or(start as i32) as usize;
@@ -296,7 +300,8 @@ pub fn detect_changes(ctx: &ToolContext, params: &Value) -> Result<Value> {
     let locked = store.lock().unwrap();
 
     // Get repo path from project record
-    let status = locked.get_project_status(project)?
+    let status = locked
+        .get_project_status(project)?
         .ok_or_else(|| anyhow::anyhow!("project not found"))?;
     let repo_path = status["repo_path"]
         .as_str()
@@ -328,7 +333,11 @@ pub fn detect_changes(ctx: &ToolContext, params: &Value) -> Result<Value> {
         let file_qname = format!("file:{}", file_path);
         if let Ok(Some(file_id)) = locked.get_node_id(project, &file_qname) {
             // DEFINES edges from this file
-            let defined = locked.get_neighbors(file_id, Some(EdgeType::Defines), NeighborDirection::Outbound)?;
+            let defined = locked.get_neighbors(
+                file_id,
+                Some(EdgeType::Defines),
+                NeighborDirection::Outbound,
+            )?;
             for (sym_id, _, _) in defined {
                 if let Ok(Some(sym)) = locked.get_node_by_id(sym_id) {
                     affected.push(json!({
@@ -388,7 +397,10 @@ fn parse_and_execute_query(ctx: &ToolContext, project: &str, query: &str) -> Res
 
     // Extract name pattern from {name: "..."} or WHERE n.name = "..."
     let name_pattern = {
-        let re = regex::Regex::new(r#"(?:name:\s*["']([^"']+)["']|n\.(?:name|qualified_name)\s*=\s*["']([^"']+)["'])"#).unwrap();
+        let re = regex::Regex::new(
+            r#"(?:name:\s*["']([^"']+)["']|n\.(?:name|qualified_name)\s*=\s*["']([^"']+)["'])"#,
+        )
+        .unwrap();
         re.captures(query)
             .and_then(|c| c.get(1).or_else(|| c.get(2)))
             .map(|m| m.as_str().to_owned())
@@ -398,17 +410,20 @@ fn parse_and_execute_query(ctx: &ToolContext, project: &str, query: &str) -> Res
     let nodes = locked.search_nodes(project, &name_pattern, label, limit)?;
 
     // If query has relationship pattern, fetch edges too
-    let include_edges = query_upper.contains("->") || query_upper.contains("<-") || query_upper.contains("-[");
+    let include_edges =
+        query_upper.contains("->") || query_upper.contains("<-") || query_upper.contains("-[");
 
     let result_nodes: Vec<Value> = nodes
         .iter()
-        .map(|n| json!({
-            "id": n.id,
-            "label": n.label.as_str(),
-            "qualified_name": n.qualified_name,
-            "file_path": n.file_path,
-            "line_start": n.line_start,
-        }))
+        .map(|n| {
+            json!({
+                "id": n.id,
+                "label": n.label.as_str(),
+                "qualified_name": n.qualified_name,
+                "file_path": n.file_path,
+                "line_start": n.line_start,
+            })
+        })
         .collect();
 
     let node_count = result_nodes.len();
@@ -455,7 +470,9 @@ pub fn delete_project(ctx: &ToolContext, params: &Value) -> Result<Value> {
 
 pub fn export_graph(ctx: &ToolContext, params: &Value) -> Result<Value> {
     let project = params["project"].as_str().context("missing project")?;
-    let output_path = params["output_path"].as_str().context("missing output_path")?;
+    let output_path = params["output_path"]
+        .as_str()
+        .context("missing output_path")?;
     let root_node = params["root_node"].as_str();
     let label = params["label"].as_str().and_then(NodeLabel::from_str);
     let depth = params["depth"].as_u64().unwrap_or(3).min(8) as usize;
@@ -513,7 +530,9 @@ fn extract_subgraph(
             None,
             1,
         )?;
-        let root = roots.into_iter().next()
+        let root = roots
+            .into_iter()
+            .next()
             .ok_or_else(|| anyhow::anyhow!("root node '{}' not found", root_qname))?;
 
         let mut visited: HashSet<i64> = HashSet::new();
@@ -580,8 +599,7 @@ fn extract_subgraph(
             if node_ids.len() >= max_nodes {
                 break;
             }
-            let neighbors =
-                locked.get_neighbors(seed.id, None, NeighborDirection::Outbound)?;
+            let neighbors = locked.get_neighbors(seed.id, None, NeighborDirection::Outbound)?;
             for (nb_id, _, _) in neighbors {
                 if node_ids.len() >= max_nodes {
                     break;
@@ -616,23 +634,31 @@ fn extract_subgraph(
 // ── HTML rendering ────────────────────────────────────────────────────────────
 
 fn render_html(subgraph: &SubGraph, project: &str) -> String {
-    let cy_nodes: Vec<serde_json::Value> = subgraph.nodes.iter().map(|n| {
-        json!({
-            "id": n.id.to_string(),
-            "label": n.label.as_str(),
-            "qname": n.qualified_name,
-            "file": n.file_path.as_deref().unwrap_or(""),
-            "line": n.line_start.unwrap_or(0),
+    let cy_nodes: Vec<serde_json::Value> = subgraph
+        .nodes
+        .iter()
+        .map(|n| {
+            json!({
+                "id": n.id.to_string(),
+                "label": n.label.as_str(),
+                "qname": n.qualified_name,
+                "file": n.file_path.as_deref().unwrap_or(""),
+                "line": n.line_start.unwrap_or(0),
+            })
         })
-    }).collect();
+        .collect();
 
-    let cy_edges: Vec<serde_json::Value> = subgraph.edges.iter().map(|(src, tgt, et)| {
-        json!({
-            "source": src.to_string(),
-            "target": tgt.to_string(),
-            "etype": et.as_str(),
+    let cy_edges: Vec<serde_json::Value> = subgraph
+        .edges
+        .iter()
+        .map(|(src, tgt, et)| {
+            json!({
+                "source": src.to_string(),
+                "target": tgt.to_string(),
+                "etype": et.as_str(),
+            })
         })
-    }).collect();
+        .collect();
 
     let graph_data = json!({
         "project": project,

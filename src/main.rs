@@ -6,7 +6,7 @@ mod pipeline;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use rmcp::{ServiceExt, transport::stdio};
+use rmcp::{transport::stdio, ServiceExt};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use tracing_subscriber::EnvFilter;
@@ -139,8 +139,7 @@ async fn main() -> Result<()> {
             // doesn't mix with JSON output on stdout.
             tracing_subscriber::fmt()
                 .with_env_filter(
-                    EnvFilter::from_env("ARBORIST_LOG")
-                        .add_directive("arborist_mcp=warn".parse()?),
+                    EnvFilter::from_env("ARBORIST_LOG").add_directive("arborist_mcp=warn".parse()?),
                 )
                 .with_writer(std::io::stderr)
                 .init();
@@ -179,7 +178,10 @@ fn run_cli(cmd: Command, db_dir: PathBuf) -> Result<()> {
     let ctx = ToolContext { db_dir };
 
     match cmd {
-        Command::Index { repo_path, compile_commands } => {
+        Command::Index {
+            repo_path,
+            compile_commands,
+        } => {
             // Run pipeline directly (blocking) so the user sees a clean exit.
             let project_name = std::path::Path::new(&repo_path)
                 .file_name()
@@ -212,7 +214,12 @@ fn run_cli(cmd: Command, db_dir: PathBuf) -> Result<()> {
             print_result(&result);
         }
 
-        Command::Search { project, pattern, label, limit } => {
+        Command::Search {
+            project,
+            pattern,
+            label,
+            limit,
+        } => {
             let mut p = json!({"project": project, "name_pattern": pattern, "limit": limit});
             if let Some(l) = label {
                 p["label"] = Value::String(l);
@@ -221,30 +228,51 @@ fn run_cli(cmd: Command, db_dir: PathBuf) -> Result<()> {
             print_result(&result);
         }
 
-        Command::Trace { project, function, direction, depth } => {
-            let result = mcp::tools::trace_calls(&ctx, &json!({
-                "project": project,
-                "function_name": function,
-                "direction": direction,
-                "depth": depth
-            }))?;
+        Command::Trace {
+            project,
+            function,
+            direction,
+            depth,
+        } => {
+            let result = mcp::tools::trace_calls(
+                &ctx,
+                &json!({
+                    "project": project,
+                    "function_name": function,
+                    "direction": direction,
+                    "depth": depth
+                }),
+            )?;
             print_result(&result);
         }
 
-        Command::Similar { project, symbol, top } => {
-            let result = mcp::tools::find_similar(&ctx, &json!({
-                "project": project,
-                "function_name": symbol,
-                "top_k": top
-            }))?;
+        Command::Similar {
+            project,
+            symbol,
+            top,
+        } => {
+            let result = mcp::tools::find_similar(
+                &ctx,
+                &json!({
+                    "project": project,
+                    "function_name": symbol,
+                    "top_k": top
+                }),
+            )?;
             print_result(&result);
         }
 
-        Command::Snippet { project, qualified_name } => {
-            let result = mcp::tools::get_snippet(&ctx, &json!({
-                "project": project,
-                "qualified_name": qualified_name
-            }))?;
+        Command::Snippet {
+            project,
+            qualified_name,
+        } => {
+            let result = mcp::tools::get_snippet(
+                &ctx,
+                &json!({
+                    "project": project,
+                    "qualified_name": qualified_name
+                }),
+            )?;
             print_result(&result);
         }
 
@@ -254,19 +282,31 @@ fn run_cli(cmd: Command, db_dir: PathBuf) -> Result<()> {
         }
 
         Command::Query { project, query } => {
-            let result = mcp::tools::query_graph(&ctx, &json!({"project": project, "query": query}))?;
+            let result =
+                mcp::tools::query_graph(&ctx, &json!({"project": project, "query": query}))?;
             print_result(&result);
         }
 
-        Command::Export { project, output, root, label, depth, max_nodes } => {
+        Command::Export {
+            project,
+            output,
+            root,
+            label,
+            depth,
+            max_nodes,
+        } => {
             let mut p = json!({
                 "project": project,
                 "output_path": output,
                 "depth": depth,
                 "max_nodes": max_nodes
             });
-            if let Some(r) = root { p["root_node"] = Value::String(r); }
-            if let Some(l) = label { p["label"] = Value::String(l); }
+            if let Some(r) = root {
+                p["root_node"] = Value::String(r);
+            }
+            if let Some(l) = label {
+                p["label"] = Value::String(l);
+            }
             let result = mcp::tools::export_graph(&ctx, &p)?;
             print_result(&result);
         }
@@ -283,12 +323,21 @@ fn run_cli(cmd: Command, db_dir: PathBuf) -> Result<()> {
 }
 
 fn print_result(v: &Value) {
-    println!("{}", serde_json::to_string_pretty(v).unwrap_or_else(|_| v.to_string()));
+    println!(
+        "{}",
+        serde_json::to_string_pretty(v).unwrap_or_else(|_| v.to_string())
+    );
 }
 
 fn sanitize(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 

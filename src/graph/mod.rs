@@ -54,12 +54,7 @@ impl GraphBuffer {
         })
     }
 
-    pub fn upsert_edge(
-        &self,
-        source_id: i64,
-        target_id: i64,
-        edge_type: EdgeType,
-    ) -> Result<()> {
+    pub fn upsert_edge(&self, source_id: i64, target_id: i64, edge_type: EdgeType) -> Result<()> {
         self.store.lock().unwrap().upsert_edge(&EdgeInput {
             source_id,
             target_id,

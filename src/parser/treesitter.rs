@@ -20,8 +20,6 @@ pub struct Symbol {
 pub struct CallSite {
     pub caller_qname: String,
     pub callee_name: String,
-    pub file_path: String,
-    pub line: u32,
 }
 
 /// Include directive.
@@ -33,7 +31,6 @@ pub struct IncludeDirective {
 
 pub struct TreeSitterExtractor {
     parser: Parser,
-    lang: Language,
 }
 
 impl TreeSitterExtractor {
@@ -41,7 +38,7 @@ impl TreeSitterExtractor {
         let lang: Language = tree_sitter_cpp::LANGUAGE.into();
         let mut parser = Parser::new();
         parser.set_language(&lang)?;
-        Ok(Self { parser, lang })
+        Ok(Self { parser })
     }
 
     pub fn extract_file(
@@ -74,6 +71,7 @@ impl TreeSitterExtractor {
         Ok((symbols, calls, includes))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn walk_node(
         &self,
         node: Node,
@@ -91,7 +89,9 @@ impl TreeSitterExtractor {
                     .or_else(|| node.named_child(0))
                 {
                     let raw = node_text(path_node, source);
-                    let included = raw.trim_matches(|c| c == '"' || c == '<' || c == '>').to_owned();
+                    let included = raw
+                        .trim_matches(|c| c == '"' || c == '<' || c == '>')
+                        .to_owned();
                     includes.push(IncludeDirective {
                         from_file: file_path.to_owned(),
                         included_path: included,
@@ -102,7 +102,7 @@ impl TreeSitterExtractor {
             "namespace_definition" => {
                 let name = child_text_by_field(node, "name", source)
                     .unwrap_or_else(|| "(anonymous)".to_owned());
-                let qname = qualify(&scope_stack, &name);
+                let qname = qualify(scope_stack, &name);
                 let (ls, le) = node_lines(node);
                 symbols.push(Symbol {
                     label: NodeLabel::Namespace,
@@ -113,7 +113,15 @@ impl TreeSitterExtractor {
                     parent_scope: scope_stack.last().cloned(),
                 });
                 scope_stack.push(qname);
-                self.walk_children(node, source, file_path, scope_stack, symbols, calls, includes);
+                self.walk_children(
+                    node,
+                    source,
+                    file_path,
+                    scope_stack,
+                    symbols,
+                    calls,
+                    includes,
+                );
                 scope_stack.pop();
                 return;
             }
@@ -126,7 +134,7 @@ impl TreeSitterExtractor {
                 };
                 let name = child_text_by_field(node, "name", source)
                     .unwrap_or_else(|| "(anonymous)".to_owned());
-                let qname = qualify(&scope_stack, &name);
+                let qname = qualify(scope_stack, &name);
                 let (ls, le) = node_lines(node);
                 symbols.push(Symbol {
                     label,
@@ -140,14 +148,24 @@ impl TreeSitterExtractor {
                 if let Some(bases) = node.child_by_field_name("bases") {
                     for i in 0..bases.child_count() {
                         if let Some(base) = bases.child(i) {
-                            if base.kind() == "base_class_clause" || base.kind() == "type_identifier" {
+                            if base.kind() == "base_class_clause"
+                                || base.kind() == "type_identifier"
+                            {
                                 // Handled separately in the call resolution pass
                             }
                         }
                     }
                 }
                 scope_stack.push(qname);
-                self.walk_children(node, source, file_path, scope_stack, symbols, calls, includes);
+                self.walk_children(
+                    node,
+                    source,
+                    file_path,
+                    scope_stack,
+                    symbols,
+                    calls,
+                    includes,
+                );
                 scope_stack.pop();
                 return;
             }
@@ -161,7 +179,7 @@ impl TreeSitterExtractor {
                             // Will be extracted as Template node
                             let name = extract_function_name(inner, source)
                                 .unwrap_or_else(|| "(template)".to_owned());
-                            let qname = qualify(&scope_stack, &name);
+                            let qname = qualify(scope_stack, &name);
                             let (ls, le) = node_lines(node);
                             symbols.push(Symbol {
                                 label: NodeLabel::Template,
@@ -177,7 +195,7 @@ impl TreeSitterExtractor {
                         "class_specifier" | "struct_specifier" => {
                             let name = child_text_by_field(inner, "name", source)
                                 .unwrap_or_else(|| "(template)".to_owned());
-                            let qname = qualify(&scope_stack, &name);
+                            let qname = qualify(scope_stack, &name);
                             let (ls, le) = node_lines(node);
                             symbols.push(Symbol {
                                 label: NodeLabel::Template,
@@ -202,7 +220,7 @@ impl TreeSitterExtractor {
                     NodeLabel::Function
                 };
                 if let Some(name) = extract_function_name(node, source) {
-                    let qname = qualify(&scope_stack, &name);
+                    let qname = qualify(scope_stack, &name);
                     let (ls, le) = node_lines(node);
                     symbols.push(Symbol {
                         label,
@@ -225,7 +243,7 @@ impl TreeSitterExtractor {
             "enum_specifier" => {
                 let name = child_text_by_field(node, "name", source)
                     .unwrap_or_else(|| "(anonymous)".to_owned());
-                let qname = qualify(&scope_stack, &name);
+                let qname = qualify(scope_stack, &name);
                 let (ls, le) = node_lines(node);
                 symbols.push(Symbol {
                     label: NodeLabel::Enum,
@@ -243,7 +261,7 @@ impl TreeSitterExtractor {
                     if let Some(decl) = node.child_by_field_name("declarator") {
                         let name = simple_declarator_name(decl, source);
                         if !name.is_empty() {
-                            let qname = qualify(&scope_stack, &name);
+                            let qname = qualify(scope_stack, &name);
                             let (ls, le) = node_lines(node);
                             symbols.push(Symbol {
                                 label: NodeLabel::Variable,
@@ -261,9 +279,18 @@ impl TreeSitterExtractor {
             _ => {}
         }
 
-        self.walk_children(node, source, file_path, scope_stack, symbols, calls, includes);
+        self.walk_children(
+            node,
+            source,
+            file_path,
+            scope_stack,
+            symbols,
+            calls,
+            includes,
+        );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn walk_children(
         &self,
         node: Node,
@@ -276,7 +303,15 @@ impl TreeSitterExtractor {
     ) {
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
-            self.walk_node(child, source, file_path, scope_stack, symbols, calls, includes);
+            self.walk_node(
+                child,
+                source,
+                file_path,
+                scope_stack,
+                symbols,
+                calls,
+                includes,
+            );
         }
     }
 
@@ -284,7 +319,7 @@ impl TreeSitterExtractor {
         &self,
         node: Node,
         source: &[u8],
-        file_path: &str,
+        _file_path: &str,
         caller: &str,
         calls: &mut Vec<CallSite>,
     ) {
@@ -295,15 +330,13 @@ impl TreeSitterExtractor {
                     calls.push(CallSite {
                         caller_qname: caller.to_owned(),
                         callee_name: name,
-                        file_path: file_path.to_owned(),
-                        line: node.start_position().row as u32 + 1,
                     });
                 }
             }
         }
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
-            self.collect_calls(child, source, file_path, caller, calls);
+            self.collect_calls(child, source, _file_path, caller, calls);
         }
     }
 }

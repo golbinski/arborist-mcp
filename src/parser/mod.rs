@@ -5,14 +5,12 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::graph::GraphBuffer;
 use crate::graph::schema::{EdgeType, NodeLabel};
+use crate::graph::GraphBuffer;
 use treesitter::TreeSitterExtractor;
 
 static CPP_EXTENSIONS: &[&str] = &[
-    "cpp", "cxx", "cc", "c++", "C", "c",
-    "hpp", "hxx", "hh", "h++", "h",
-    "cu", "cuh", // CUDA
+    "cpp", "cxx", "cc", "c++", "C", "c", "hpp", "hxx", "hh", "h++", "h", "cu", "cuh", // CUDA
 ];
 
 /// Returns true if `path` is a C++ source or header file.
@@ -31,11 +29,11 @@ pub fn is_cpp_file(path: &Path) -> bool {
 /// are always excluded regardless of ignore files.
 pub fn collect_cpp_files(repo_path: &Path) -> Vec<PathBuf> {
     ignore::WalkBuilder::new(repo_path)
-        .hidden(false)             // don't skip dotfiles by default
-        .git_ignore(true)          // respect .gitignore
-        .git_global(true)          // respect global gitignore (~/.config/git/ignore)
-        .git_exclude(true)         // respect .git/info/exclude
-        .add_custom_ignore_filename(".hgignore")  // Mercurial (glob-syntax subset)
+        .hidden(false) // don't skip dotfiles by default
+        .git_ignore(true) // respect .gitignore
+        .git_global(true) // respect global gitignore (~/.config/git/ignore)
+        .git_exclude(true) // respect .git/info/exclude
+        .add_custom_ignore_filename(".hgignore") // Mercurial (glob-syntax subset)
         .filter_entry(|e| {
             // Always skip VCS metadata dirs
             let name = e.file_name().to_string_lossy();
@@ -244,12 +242,19 @@ mod tests {
         fs::write(root.join(".ignore"), "build/\n").unwrap();
 
         let files = collect_cpp_files(root);
-        let names: Vec<_> = files.iter()
+        let names: Vec<_> = files
+            .iter()
             .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
             .collect();
 
-        assert!(names.contains(&"main.cpp".to_owned()), "main.cpp should be found");
-        assert!(!names.contains(&"gen.cpp".to_owned()), "gen.cpp in build/ should be ignored");
+        assert!(
+            names.contains(&"main.cpp".to_owned()),
+            "main.cpp should be found"
+        );
+        assert!(
+            !names.contains(&"gen.cpp".to_owned()),
+            "gen.cpp in build/ should be ignored"
+        );
     }
 
     #[test]
@@ -264,7 +269,8 @@ mod tests {
         fs::write(root.join("src/net/README.md"), "").unwrap();
 
         let files = collect_cpp_files(root);
-        let names: Vec<_> = files.iter()
+        let names: Vec<_> = files
+            .iter()
             .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
             .collect();
 

@@ -5,11 +5,13 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::embeddings;
+use crate::graph::schema::{EdgeType, NodeLabel};
 use crate::graph::store::GraphStore;
 use crate::graph::GraphBuffer;
-use crate::graph::schema::{EdgeType, NodeLabel};
-use crate::parser::{collect_cpp_files, ingest_call_sites, ingest_file_result, ingest_includes, parse_file};
 use crate::parser::libclang::LibclangResolver;
+use crate::parser::{
+    collect_cpp_files, ingest_call_sites, ingest_file_result, ingest_includes, parse_file,
+};
 
 pub struct IndexingConfig {
     pub repo_path: PathBuf,
@@ -56,13 +58,11 @@ fn run_inner(config: &IndexingConfig, store: Arc<Mutex<GraphStore>>) -> Result<(
 
     let file_results: Vec<_> = files
         .par_iter()
-        .filter_map(|path| {
-            match parse_file(path) {
-                Ok(r) => Some(r),
-                Err(e) => {
-                    tracing::warn!("parse error for {}: {}", path.display(), e);
-                    None
-                }
+        .filter_map(|path| match parse_file(path) {
+            Ok(r) => Some(r),
+            Err(e) => {
+                tracing::warn!("parse error for {}: {}", path.display(), e);
+                None
             }
         })
         .collect();
@@ -130,13 +130,17 @@ fn run_inner(config: &IndexingConfig, store: Arc<Mutex<GraphStore>>) -> Result<(
                     &config.project_name,
                     NodeLabel::Class,
                     &ri.derived_qname,
-                    None, None, None,
+                    None,
+                    None,
+                    None,
                 )?;
                 let base_id = graph.ensure_node(
                     &config.project_name,
                     NodeLabel::Class,
                     &ri.base_qname,
-                    None, None, None,
+                    None,
+                    None,
+                    None,
                 )?;
                 graph.upsert_edge(derived_id, base_id, EdgeType::Inherits)?;
             }

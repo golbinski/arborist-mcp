@@ -27,7 +27,11 @@ pub struct ResolvedUsage {
     pub type_qname: String,
 }
 
-pub type LibclangResult = (Vec<ResolvedCall>, Vec<ResolvedInheritance>, Vec<ResolvedUsage>);
+pub type LibclangResult = (
+    Vec<ResolvedCall>,
+    Vec<ResolvedInheritance>,
+    Vec<ResolvedUsage>,
+);
 
 pub struct LibclangResolver {
     compile_commands: PathBuf,
@@ -74,9 +78,13 @@ fn probe_libclang() -> bool {
         &["libclang.dylib"]
     } else {
         &[
-            "libclang.so", "libclang.so.1",
-            "libclang-14.so.1", "libclang-15.so.1", "libclang-16.so.1",
-            "libclang-17.so.1", "libclang-18.so.1",
+            "libclang.so",
+            "libclang.so.1",
+            "libclang-14.so.1",
+            "libclang-15.so.1",
+            "libclang-16.so.1",
+            "libclang-17.so.1",
+            "libclang-18.so.1",
         ]
     };
 
@@ -103,7 +111,10 @@ fn probe_libclang() -> bool {
         }
     }
 
-    if let Ok(out) = std::process::Command::new("llvm-config").arg("--libdir").output() {
+    if let Ok(out) = std::process::Command::new("llvm-config")
+        .arg("--libdir")
+        .output()
+    {
         let dir = String::from_utf8_lossy(&out.stdout).trim().to_owned();
         if !dir.is_empty() {
             lib_dirs.push(PathBuf::from(dir));
@@ -155,11 +166,19 @@ unsafe fn libclang_traverse(
     // ── Load compilation database ──────────────────────────────────────────
     let mut db_err: CXCompilationDatabase_Error = 0;
     let db = clang_CompilationDatabase_fromDirectory(dir_cs.as_ptr(), &mut db_err);
-    anyhow::ensure!(!db.is_null() && db_err == 0, "compile_commands.json load failed (err={})", db_err);
+    anyhow::ensure!(
+        !db.is_null() && db_err == 0,
+        "compile_commands.json load failed (err={})",
+        db_err
+    );
 
     let cmds = clang_CompilationDatabase_getCompileCommands(db, file_cs.as_ptr());
     clang_CompilationDatabase_dispose(db);
-    anyhow::ensure!(!cmds.is_null(), "no compile commands for {}", file_path.display());
+    anyhow::ensure!(
+        !cmds.is_null(),
+        "no compile commands for {}",
+        file_path.display()
+    );
 
     let n_cmds = clang_CompileCommands_getSize(cmds);
     if n_cmds == 0 {
@@ -173,7 +192,9 @@ unsafe fn libclang_traverse(
     let mut arg_strings: Vec<CString> = Vec::with_capacity(argc);
     for i in 1..argc {
         let raw = clang_CompileCommand_getArg(cmd, i as u32);
-        let s = CStr::from_ptr(clang_getCString(raw)).to_string_lossy().into_owned();
+        let s = CStr::from_ptr(clang_getCString(raw))
+            .to_string_lossy()
+            .into_owned();
         clang_disposeString(raw);
         arg_strings.push(CString::new(s)?);
     }
@@ -192,12 +213,15 @@ unsafe fn libclang_traverse(
         argv.len() as std::os::raw::c_int,
         std::ptr::null_mut(),
         0,
-        CXTranslationUnit_SkipFunctionBodies as i32,
+        CXTranslationUnit_SkipFunctionBodies,
     );
 
     if tu.is_null() {
         clang_disposeIndex(index);
-        anyhow::bail!("clang_parseTranslationUnit failed for {}", file_path.display());
+        anyhow::bail!(
+            "clang_parseTranslationUnit failed for {}",
+            file_path.display()
+        );
     }
 
     // ── AST walk ──────────────────────────────────────────────────────────
@@ -231,6 +255,7 @@ extern "C" fn ast_visitor(
     unsafe {
         use clang_sys::*;
         let vd = &mut *(data as *mut VisitorData);
+        #[allow(non_upper_case_globals)]
         match clang_getCursorKind(cursor) {
             CXCursor_FunctionDecl
             | CXCursor_CXXMethod
@@ -293,9 +318,7 @@ unsafe fn cx_to_string(s: clang_sys::CXString) -> String {
     let result = if ptr.is_null() {
         String::new()
     } else {
-        std::ffi::CStr::from_ptr(ptr)
-            .to_string_lossy()
-            .into_owned()
+        std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
     };
     clang_disposeString(s);
     result

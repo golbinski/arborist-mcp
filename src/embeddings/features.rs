@@ -56,10 +56,7 @@ fn edge_type_index(et: EdgeType) -> usize {
 }
 
 /// Build the initial feature vector for a single node.
-pub fn build_feature_vector(
-    node: &Node,
-    degree_table: &DegreeTable,
-) -> Array1<f32> {
+pub fn build_feature_vector(node: &Node, degree_table: &DegreeTable) -> Array1<f32> {
     let mut v = Array1::<f32>::zeros(FEATURE_DIM);
 
     // ── Hash dims: name tokens ─────────────────────────────────────────────
@@ -79,7 +76,7 @@ pub fn build_feature_vector(
         for (&et_idx, &(in_deg, out_deg)) in degrees {
             let base = degree_offset + et_idx * 2;
             if base + 1 < FEATURE_DIM {
-                v[base]     = log_norm(in_deg);
+                v[base] = log_norm(in_deg);
                 v[base + 1] = log_norm(out_deg);
             }
         }

@@ -188,9 +188,15 @@ mod tests {
     #[test]
     fn node_label_roundtrip() {
         for label in [
-            NodeLabel::Project, NodeLabel::File, NodeLabel::Namespace,
-            NodeLabel::Class, NodeLabel::Struct, NodeLabel::Function,
-            NodeLabel::Method, NodeLabel::Template, NodeLabel::Enum,
+            NodeLabel::Project,
+            NodeLabel::File,
+            NodeLabel::Namespace,
+            NodeLabel::Class,
+            NodeLabel::Struct,
+            NodeLabel::Function,
+            NodeLabel::Method,
+            NodeLabel::Template,
+            NodeLabel::Enum,
             NodeLabel::Variable,
         ] {
             assert_eq!(NodeLabel::from_str(label.as_str()), Some(label));
@@ -202,9 +208,15 @@ mod tests {
     fn node_label_one_hot_indices_unique() {
         let mut seen = std::collections::HashSet::new();
         for label in [
-            NodeLabel::Project, NodeLabel::File, NodeLabel::Namespace,
-            NodeLabel::Class, NodeLabel::Struct, NodeLabel::Function,
-            NodeLabel::Method, NodeLabel::Template, NodeLabel::Enum,
+            NodeLabel::Project,
+            NodeLabel::File,
+            NodeLabel::Namespace,
+            NodeLabel::Class,
+            NodeLabel::Struct,
+            NodeLabel::Function,
+            NodeLabel::Method,
+            NodeLabel::Template,
+            NodeLabel::Enum,
             NodeLabel::Variable,
         ] {
             let idx = label.one_hot_index();

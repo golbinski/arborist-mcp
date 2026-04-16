@@ -20,10 +20,7 @@ pub type AdjList = Vec<Vec<(usize, f32)>>;
 /// Build a symmetric weighted adjacency list from raw edge data.
 ///
 /// `node_ids` is the ordered list of node IDs; `edges` is `(source_id, target_id, edge_type)`.
-pub fn build_adjacency(
-    node_ids: &[i64],
-    edges: &[(i64, i64, EdgeType)],
-) -> AdjList {
+pub fn build_adjacency(node_ids: &[i64], edges: &[(i64, i64, EdgeType)]) -> AdjList {
     let id_to_idx: HashMap<i64, usize> = node_ids
         .iter()
         .enumerate()
@@ -115,7 +112,9 @@ mod tests {
     fn unit_vec(vals: &[f32]) -> Array1<f32> {
         let mut v = Array1::from_vec(vals.to_vec());
         let norm: f32 = v.dot(&v).sqrt();
-        if norm > 1e-9 { v /= norm; }
+        if norm > 1e-9 {
+            v /= norm;
+        }
         v
     }
 
@@ -133,10 +132,7 @@ mod tests {
     #[test]
     fn build_adjacency_deduplicates_parallel_edges() {
         let node_ids = vec![1i64, 2];
-        let edges = vec![
-            (1, 2, EdgeType::Calls),
-            (1, 2, EdgeType::Calls),
-        ];
+        let edges = vec![(1, 2, EdgeType::Calls), (1, 2, EdgeType::Calls)];
         let adj = build_adjacency(&node_ids, &edges);
         assert_eq!(adj[0].len(), 1, "parallel edges should be merged");
         let (_, w) = adj[0][0];
@@ -152,7 +148,11 @@ mod tests {
         let adj: AdjList = vec![vec![]];
         let result = propagate(init.clone(), &adj);
         for i in 0..FEATURE_DIM {
-            assert!((result[[0, i]] - init[[0, i]]).abs() < 1e-6, "dim {} changed", i);
+            assert!(
+                (result[[0, i]] - init[[0, i]]).abs() < 1e-6,
+                "dim {} changed",
+                i
+            );
         }
     }
 
